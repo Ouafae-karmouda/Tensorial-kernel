@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Sep 15 10:49:51 2021
+Created on Wed Sep 22 09:13:41 2021
 
 @author: adminlocal
 """
+
 import sys
 from Construct_TT_cores import  get_TT_svd
 chemin = ("C:/Users/adminlocal/Desktop/Code_n")
@@ -16,12 +17,30 @@ from kernel_optimized import construct_list_projectors, get_scores
 import tqdm
 import pickle
 
+def read_dataset_extended(file):
+    data = pickle.load(file)
+    file.close()
 
+    T_c0 = list(data[0].reshape(16,9,480,640,4))
+    T_c1 = list(data[1].reshape(16,9,480,640,4))
+    T_c2 = list(data[2].reshape(16,9,480,640,4))
+    
+    data = T_c0 + T_c1 + T_c2
+    labels = 16*[0] + 16*[1] + 16*[2]
+    
+    return data, labels
 
+"""
+#Dataset of Extended yale dataset
+TT_ranks= [1,2,2,2,1]
+list_data, labels = read_dataset_extended()
+print("get TT cores")
+list_TT_cores =  get_TT_svd(list_data, TT_ranks)
+"""
 
 
 # Check if projectors are computed
-proj_file = "projectors_val3.pic"
+proj_file = "extended_projectors_val3.pic"
 if os.path.isfile(proj_file):
 	with open(proj_file, 'rb') as proj_file:
     		data = pickle.load(proj_file)
@@ -30,18 +49,16 @@ if os.path.isfile(proj_file):
  
 else:
     
-    with open('videos_processed', 'rb') as pickle_file:
-        content = pickle.load(pickle_file)
-    
-    list_data = content[0]
-    list_labels = content[1]
-    TT_ranks = [1,2,4,2,1]
-    N_video = len(list_data)
+    with open('C:/Users/adminlocal/Desktop/Code_n/Tensors_Extended_Yale_3lasses', 'rb') as pickle_file:
+        list_data, list_labels = read_dataset_extended(pickle_file)
+
+    TT_ranks = [1,2,3,2,1]
+    N = len(list_data)
     print("Get TT-svd")
     list_TT_cores =  get_TT_svd(list_data, TT_ranks)
     
     list_projectors = []
-    for  n in range(N_video):
+    for  n in range(N):
         #construit le projecteur pour la video n
         proj = construct_list_projectors(list_TT_cores[n])
         #ajoute le projecteur et le label dans leurs listes respectives
@@ -49,15 +66,6 @@ else:
 	# On enregistre tout ca dans un fichier pour la prochaine fois sous forme de dictionnaire
     with open(proj_file,'wb') as proj_file:
         pickle.dump({'projectors':list_projectors, 'labels':list_labels} , proj_file)
-
-
-
-
-
-
-
-
-
 
 l=1
 Nrep = 1
@@ -72,26 +80,3 @@ for nrep in tqdm.tqdm(range(Nrep)):
     print("t11", t11)
     print("Sc", sc)
     scores[nrep] = sc
-
-"""
-#Dataset of Extended yale dataset
-TT_ranks= [1,2,2,2,1]
-list_data, labels = read_dataset_extended()
-print("get TT cores")
-list_TT_cores =  get_TT_svd(list_data, TT_ranks)
-"""
-
-"""    
-list_data, labels = process_data_videos("C:/Users/adminlocal/Desktop/Code_n/Video_jumping_walking")
-
-# open a file, where you ant to store the data
-file = open('videos_processed', 'wb')# list [list_data, labels]
-data=[None]*2
-data[0] = list_data
-data[1] = labels
-# dump information to that file
-pickle.dump(data, file)
-pickle.dump(labels , file)
-# close the file
-file.close()
-"""
