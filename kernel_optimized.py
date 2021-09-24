@@ -6,6 +6,7 @@ Created on Wed Sep 22 09:00:51 2021
 """
 import numpy as np 
 from sklearn.model_selection import cross_val_score
+from sklearn.preprocessing import StandardScaler
 from sklearn import svm
 import tlinalg
 import sys 
@@ -19,7 +20,7 @@ sys.path.append(chemin)
     
 
 def pseudo_inv(G):# pseudo_inv of G
-    temp = tlinalg.t_inv(  tlinalg.t_product(tlinalg.t_transpose(G), G) )
+    temp = tlinalg.t_inv(tlinalg.t_product(tlinalg.t_transpose(G), G) )
     
     return tlinalg.t_product(temp, tlinalg.t_transpose(G))
 
@@ -63,52 +64,94 @@ def get_precomputed_kernel(list_proj_X, list_proj_Y):
     M22 = np.squeeze(list_proj_Y[-1])
     m22 = np.linalg.norm(M22)
     
-    prod = (np.linalg.norm(M1/m1 - M2/m2, 'fro'))**2
-    prod = prod * (np.linalg.norm(M11/m11 - M22/m22, 'fro'))**2
+    s = (np.linalg.norm(M1/m1 - M2/m2, 'fro'))**2
+    s = s + (np.linalg.norm(M11/m11- M22/m22, 'fro'))**2
 
     
     for q in range(1, Q-1):
         n1 = np.linalg.norm(list_proj_X[q])
         n2 = np.linalg.norm(list_proj_Y[q])
-        prod = prod*(np.linalg.norm(list_proj_X[q]/n1 - list_proj_Y[q]/n2))**2
-    return prod
+        s = s+(np.linalg.norm(list_proj_X[q]/n1 - list_proj_Y[q]/n2))**2
+    return s
     
     
-def precomputed_kernel_matrix(X1_data, X2_data):#X1_data=[list_proj(X0),..., list_proj(Xn)]
+def precomputed_kernel_matrix(X1_data, X2_data, kernel='subs_tens'):#X1_data=[list_proj(X0),..., list_proj(Xn)]
     K=[]
     for i, L1 in enumerate(X1_data):
         for j, L2 in enumerate(X2_data):
-              K.append(get_precomputed_kernel(L1, L2))
+            if kernel == 'bats_kernel':
+                K.append(single_kernel_bat(L1, L2))
+            else:
+                K.append(get_precomputed_kernel(L1, L2))
     K = np.asarray(K)
     return K.reshape((len(X1_data), len(X2_data)))
 
-def cross_valid_proj(Jtrain, ytr):#Jtrain : Pre-computed matrix of training
+def single_kernel_bat(TT_cores_X, TT_cores_Y):
+    
+    [G1, G2, G3, G4] = TT_cores_X
+    [G11, G22, G33, G44] = TT_cores_Y
+    [_, R1, R2, R3, _]  = [1, TT_cores_X[0].shape[-1],  TT_cores_X[1].shape[-1], TT_cores_X[2].shape[-1],1  ]
+    
+    s=0 
+    for r1 in range(R1):
+        for r2 in range(R2):
+            for r3 in range(R3):
+                temp1 = np.exp(-(np.linalg.norm(G1[:,r1]/np.linalg.norm(G1[:,r1]) -G11[:,r1]/np.linalg.norm(G11[:,r1])))**2)
+                temp2 = np.exp(-(np.linalg.norm(G2[r1,:,r2]/np.linalg.norm(G2[r1,:,r2]) -G22[r1,:,r2]/np.linalg.norm(G22[r1,:,r2]) ))**2)
+                temp3 = np.exp(-(np.linalg.norm(G3[r2,:,r3]/np.linalg.norm(G3[r2,:,r3]) -G33[r2,:,r3]/np.linalg.norm(G33[r2,:,r3]) ))**2)
+                temp4 = np.exp(-(np.linalg.norm(G4[r3,:]/np.linalg.norm(G4[r3,:]) -G44[r3,:]/np.linalg.norm(G44[r3,:])))**2)
+                s = s+ temp1 + temp2 + temp3 + temp4
+                
+    return s
+                
+    
+
+def cross_valid_proj(Jtrain, ytr,  kernel='subs_tens'):#Jtrain : Pre-computed matrix of training
     
     tuned_parameter_C = [2**k for k in range(-9,9)]
     tuned_parameter_gamma = [2**k for k in range(-9,9)]
     
-    acc =[]
+    acc = 0
+    stand = 0
     
     for g in tuned_parameter_gamma:
-        t0 = time.time()
-        K_train = np.exp(-g*Jtrain)
-        t1 = time.time() - t0
+        if kernel == 'bats_kernel':
+            K_train = Jtrain
+        else:
+            K_train = np.exp(-g*Jtrain)
         for c in tuned_parameter_C:
-            t2 = time.time()
             clf = svm.SVC(kernel='precomputed', C=c, gamma=g)
             clf.fit(K_train, ytr)
             cv_results  = cross_val_score(clf, K_train, ytr, cv=2)
-            t3 = time.time()-t2
-            acc.append(np.mean(cv_results))
+            if np.mean(cv_results) > acc:
+                acc = np.mean(cv_results) 
+                stand = np.std(cv_results)
+            
+    return acc, stand
     
-    return max(acc), t1, t3
+
+
     
+def normalize_list_projectors(list_projectors):#list_projectors: The nth element is a list of projectors of the nth data
+    
+    list_proj_per_data = [] #the qth elem is a liste of projectors of all data for the qth factors
+    Q = len(list_projectors[0])
+    N = len(list_projectors)
+    for q in range(Q):
+        L = [list_projectors[n][q] for n in range(N) ]
+        arr1 = np.asarray(L)
+        print(arr1.shape)
+        arr = arr1.reshape(arr1.shape[0],-1)
+        
+        scaler = StandardScaler()
+        scaler.fit(arr)
+        arr = scaler.transform(arr)
+        arr = arr.reshape(arr1.shape)
+        list_proj_per_data.append(list(arr))
+        
+    list_projectors_norm = [[list_proj_per_data[q][n] for q in range(Q)] for n in range(N) ]
+    
+    return list_projectors_norm
 
-def get_scores(list_data, list_labels, l):#l: longueur du training set, 
-                                                    #list_data =[list_proj(X0),..., list_proj(Xn)]
-
-    J_train =  precomputed_kernel_matrix(list_data, list_data)
-    score, t1, t11 = cross_valid_proj(J_train, list_labels)
-
-    return score, t1, t11
+    
     
