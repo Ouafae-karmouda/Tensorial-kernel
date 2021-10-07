@@ -12,6 +12,7 @@ import tlinalg
 import sys 
 import time
 import tensorly as tl
+from MPS_rand import  matrix_product_state, matrix_product_state_transposed
 
 chemin = ("C:/Users/adminlocal/Desktop/Code_n")
 sys.path.append(chemin)
@@ -37,7 +38,7 @@ def pseudo_inv_t(G_t): #pseudo_inv of transpose of G
 
 def projector1(G):#G is a tensor of order 3
     
-    return tlinalg.t_product(G, pseudo_inv(G))
+    return tlinalg.t_product(pseudo_inv(G), G)
     
     
 def projector(G):#G is a tensor of order 3
@@ -46,8 +47,12 @@ def projector(G):#G is a tensor of order 3
     
     return tlinalg.t_product(G_t, pinv_t)
 
-def projector_matrix(M):#M is a matrix
+def projector_matrix1(M):#M is a matrix
     return np.dot(M, np.linalg.pinv(M))
+
+def projector_matrix(A):
+    r = np.linalg.inv(np.dot(A,A.T))
+    return np.dot(A.T,np.dot(r,A))
 
 #calcul des projecteurs pour les données
 def construct_list_projectors(factors_X):#factors_X: liste de coeurs d'une donnée
@@ -273,4 +278,53 @@ def test_proj_matrix(G, U):
     
     return np.linalg.norm(np.dot(G, np.linalg.pinv(G) ) - np.dot(U, np.linalg.pinv(U)))
     
+
+def ambig_TT(u,a,v):
+    a1 = np.zeros(a.shape)
+    for k in range(a.shape[1]):
+        a1[:,k,:] = np.dot(u,np.dot(a[:,k,:],v))
+    return a1
+
+
+def test_tsvd_amb():
+    r1 = 3
+    r2 = 2
+    I = 10
+    
+    G = np.random.randn(r1,I,r2)
+    M1 = np.random.randn(G.shape[0],G.shape[0])
+    M2 = np.random.randn(G.shape[2],G.shape[2])
+    
+    G_tilde = ambig_TT(M1,G,M2)
+    U,_,_ = tlinalg.t_svd(G, opt ='econ')
+    Utilde,_,_ = tlinalg.t_svd(G_tilde, opt ='econ')
+    
+    UM1 = ambig_TT(M1,U,np.eye(G.shape[2],G.shape[2]))
+    
+    return U, Utilde, UM1
+    
+
+def test_projectors(X, TT_ranks):
+    
+    TT_cores = matrix_product_state(X, TT_ranks, verbose=False, type_svd = 'partial_svd')
+    TT_cores1 = matrix_product_state(X, TT_ranks, verbose=False, type_svd = 'partial_svd')
+    
+    G, G1 = TT_cores[1], TT_cores1[1]
+    U,_,_ = tlinalg.t_svd(G, opt ='econ')
+    U1,_,_ = tlinalg.t_svd(G1, opt ='econ')
+    
+    Ut,_,_ = tlinalg.t_svd(tlinalg.t_transpose(G), opt ='econ')
+    U1t,_,_ = tlinalg.t_svd(tlinalg.t_transpose(G1), opt ='econ')
+    
+    print("Projectors singular bases without transpose ",np.linalg.norm(projector(U)- projector(U1)))
+    print("Projectors without  transpose ",np.linalg.norm(projector(G)- projector(G1)))
+    
+  
+    
+    
+    
+    
+
+
+
 
